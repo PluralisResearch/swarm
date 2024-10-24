@@ -6,7 +6,7 @@ from typing import Tuple
 
 import numpy as np
 import torch
-from bitsandbytes.functional import quantize_blockwise, dequantize_blockwise
+# from bitsandbytes.functional import quantize_blockwise, dequantize_blockwise
 
 from src.compression.base import CompressionBase, CompressionInfo
 from src.proto import runtime_pb2

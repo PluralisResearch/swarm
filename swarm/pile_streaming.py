@@ -8,8 +8,9 @@ MAX_SEQ_LENGTH = 2048
 
 disable_progress_bar()
 
-GPT2TokenizerFast.max_model_input_sizes['gpt2'] = 1e20
+# GPT2TokenizerFast.max_model_input_sizes['gpt2'] = 1e20
 tokenizer = GPT2TokenizerFast.from_pretrained('gpt2')
+tokenizer.model_max_length = 1e20
 tokenizer.add_special_tokens({'pad_token': '<PAD>'})
 tokens_to_add = 128 - (len(tokenizer) % 128)
 tokenizer.add_special_tokens({'additional_special_tokens': [f'〈special{i}〉' for i in range(tokens_to_add)]})
@@ -41,16 +42,29 @@ def examples_from_documents(documents, max_seq_length=MAX_SEQ_LENGTH):
     return new_examples
 
 
+# def get_pile_dataset(seed, shards_to_choose):
+#     shards = random.Random(seed).choices(range(30), k=shards_to_choose)
+
+#     dsets = [
+#         load_dataset("json", data_files=f"https://the-eye.eu/public/AI/pile/train/{shard:02}.jsonl.zst",
+#                      streaming=True, split="train") for shard in shards
+#     ]
+
+#     pile = interleave_datasets(dsets)
+#     shuffled_pile = pile.shuffle(buffer_size=100, seed=seed)
+#     tokenized_pile = shuffled_pile.map(examples_from_documents, batched=True, batch_size=4)
+#     tokenized_pile = tokenized_pile.with_format('torch')
+#     return tokenized_pile
+
 def get_pile_dataset(seed, shards_to_choose):
     shards = random.Random(seed).choices(range(30), k=shards_to_choose)
 
-    dsets = [
-        load_dataset("json", data_files=f"https://the-eye.eu/public/AI/pile/train/{shard:02}.jsonl.zst",
-                     streaming=True, split="train") for shard in shards
-    ]
+    dsets = [load_dataset(path='karpathy/tiny_shakespeare')['train']]
 
-    pile = interleave_datasets(dsets)
-    shuffled_pile = pile.shuffle(buffer_size=100, seed=seed)
-    tokenized_pile = shuffled_pile.map(examples_from_documents, batched=True, batch_size=4)
+    shuffled_pile = interleave_datasets(dsets)
+    # shuffled_pile = pile.shuffle(buffer_size=100, seed=seed)
+    # tokenized_pile = shuffled_pile.map(examples_from_documents, batched=True, batch_size=4)
+    tokenized_pile = shuffled_pile.map(examples_from_documents, batched=True, batch_size=4, remove_columns=["text"])
+
     tokenized_pile = tokenized_pile.with_format('torch')
     return tokenized_pile

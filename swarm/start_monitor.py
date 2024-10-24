@@ -2,7 +2,7 @@ import time
 from typing import List
 
 import src
-import wandb
+# import wandb
 from src import choose_ip_address
 from src.utils.logging import TextStyle, get_logger, use_src_log_handler
 from multiaddr import Multiaddr

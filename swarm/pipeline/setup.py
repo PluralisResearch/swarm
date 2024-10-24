@@ -129,6 +129,7 @@ setup(
     name="src",
     version=version_string,
     cmdclass={"build_py": BuildPy, "develop": Develop},
+    packages=find_packages(exclude=["tests"]),
     package_data={"src": ["proto/*", "src_cli/*"]},
     include_package_data=True,
     license="MIT",

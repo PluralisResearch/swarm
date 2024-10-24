@@ -4,6 +4,7 @@ from functools import wraps
 from socket import gethostname
 
 import torch
+from torchvision import datasets, transforms
 from src import BalancedRemoteExpert, DHT
 from src.dht.crypto import RSASignatureValidator
 from src.utils import get_logger, use_src_log_handler, get_dht_time
@@ -21,34 +22,27 @@ logger = get_logger(__name__)
 TIMEOUT = 30  # averaging timeout + offset
 BACKWARD_TIMEOUT = TIMEOUT * 2.5
 
-
 class TrainerModel(torch.nn.Module):
     def __init__(self, grid_size, dht):
         super().__init__()
 
         self.dummy = torch.nn.Parameter(torch.randn(1, 1), requires_grad=True)
 
-        self.head = BalancedRemoteExpert(grid_size=grid_size, dht=dht,
-                                         forward_timeout=TIMEOUT, backward_timeout=BACKWARD_TIMEOUT,
-                                         uid_prefix='head.')
+        # self.head = BalancedRemoteExpert(grid_size=grid_size, dht=dht,
+        #                                  forward_timeout=TIMEOUT, backward_timeout=BACKWARD_TIMEOUT,
+        #                                  uid_prefix='head.')
 
-        self.body1 = BalancedRemoteExpert(grid_size=grid_size, dht=dht,
-                                          forward_timeout=TIMEOUT, backward_timeout=BACKWARD_TIMEOUT,
-                                          uid_prefix='body1.')
-
-        self.body2 = BalancedRemoteExpert(grid_size=grid_size, dht=dht,
-                                          forward_timeout=TIMEOUT, backward_timeout=BACKWARD_TIMEOUT,
-                                          uid_prefix='body2.')
 
         self.tail = BalancedRemoteExpert(grid_size=grid_size, dht=dht,
                                          forward_timeout=TIMEOUT, backward_timeout=BACKWARD_TIMEOUT,
                                          uid_prefix='tail.')
 
-    def forward(self, input_ids, **kwargs):
-        hidden = self.head(input_ids)
-        hidden = self.body1(hidden)
-        hidden = self.body2(hidden)
-        loss = self.tail(hidden, input_ids)
+    def forward(self, input_ids, labels, **kwargs):
+        # hidden = self.head(input_ids)
+        # hidden = self.body1(hidden)
+        # hidden = self.body2(hidden)
+        loss = self.tail(input_ids, labels)
+        # loss = self.tail(hidden, labels)
 
         loss = loss.mean()
 
@@ -61,7 +55,7 @@ class NoOpOptimizer(torch.optim.Optimizer):
         torch._C._log_api_usage_once("python.optimizer")
         self.defaults = defaults
 
-        
+        # self._hook_for_profile()
 
         if isinstance(params, torch.Tensor):
             raise TypeError("params argument given to the optimizer should be "
@@ -79,6 +73,7 @@ class NoOpOptimizer(torch.optim.Optimizer):
             for param_group in param_groups:
                 self.add_param_group(param_group)
 
+    # def step(self, **kwargs):
     def step(self, *args, **kwargs):
         r"""Performs a single optimization step (parameter update).
         Args:
@@ -208,19 +203,37 @@ class CollaborativeCallback(TrainerCallback):
 
 
 def main(training_args, collaboration_args, args):
-    signature_validator = RSASignatureValidator()
+    # signature_validator = RSASignatureValidator()
 
-    tokenizer = GPT2TokenizerFast.from_pretrained('gpt2')
-    tokenizer.model_max_length = 1e20
-    tokenizer.add_special_tokens({'pad_token': '<PAD>'})
-    tokens_to_add = 128 - (len(tokenizer) % 128)
-    tokenizer.add_special_tokens({'additional_special_tokens': [f'〈special{i}〉' for i in range(tokens_to_add)]})
+    # GPT2TokenizerFast.max_model_input_sizes['gpt2'] = 1e20
+    # tokenizer = GPT2TokenizerFast.from_pretrained('gpt2')
+    # tokenizer.model_max_length = 1e20
+    # tokenizer.add_special_tokens({'pad_token': '<PAD>'})
+    # tokens_to_add = 128 - (len(tokenizer) % 128)
+    # tokenizer.add_special_tokens({'additional_special_tokens': [f'〈special{i}〉' for i in range(tokens_to_add)]})
 
     set_seed(training_args.seed)
 
-    dataset = get_pile_dataset(seed=int(hash(signature_validator.local_public_key) % 100000), shards_to_choose=1)
+    # dataset = get_pile_dataset(seed=int(hash(signature_validator.local_public_key) % 100000), shards_to_choose=1)
 
-    collator = DataCollatorForLanguageModeling(tokenizer, mlm=False, pad_to_multiple_of=2048)
+    # Define transformations for the dataset
+    transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize((0.1307,), (0.3081,))
+        ])
+
+    # Load the MNIST training dataset
+    dataset = datasets.MNIST(root='./data', train=True,
+                         download=True, transform=transform)
+
+    def data_collator(features):
+        input_data = torch.stack([feat[0] for feat in features])
+        labels = torch.tensor([feat[1] for feat in features], dtype=torch.long)        
+        out_dict = {"input_ids": input_data, "labels": labels}
+        return out_dict
+    
+    collator = data_collator
+    # collator = DataCollatorForLanguageModeling(tokenizer, mlm=False, pad_to_multiple_of=2048)
 
     grid_size = (1, args.grid_size)
     dht = DHT(
@@ -242,7 +255,7 @@ def main(training_args, collaboration_args, args):
         model=model,
         args=training_args,
         train_dataset=dataset,
-        tokenizer=tokenizer,
+        # tokenizer=tokenizer,
         data_collator=collator,
         optimizers=(optimizer, NoOpScheduler(optimizer)),
         callbacks=[
